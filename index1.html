@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Gợi Ý Quần Áo Theo Độ Tuổi</title>
+
+<style>
+  body {
+    font-family: "Poppins", sans-serif;
+    background: linear-gradient(135deg, #e3f2fd, #f8f9fa);
+    margin: 0;
+    padding: 20px;
+    text-align: center;
+  }
+  h2 { color: #1a237e; font-size: 26px; margin-bottom: 10px; }
+  .section {
+    background: white; border-radius: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.15);
+    padding: 20px; margin: 15px auto; max-width: 500px;
+  }
+  button {
+    margin-top: 10px; padding: 10px 15px;
+    background: #1a237e; border: none; color: white;
+    border-radius: 8px; cursor: pointer; font-size: 15px; transition: background 0.3s;
+  }
+  button:hover { background: #3949ab; }
+  video {
+    width: 100%; max-width: 360px; border-radius: 12px; margin-top: 10px;
+    border: 3px solid #1a237e; object-fit: cover;
+  }
+  input[type="file"] {
+    padding: 10px; border-radius: 8px; border: 1px solid #999;
+    width: 80%; margin-top: 10px;
+  }
+  #resultBox {
+    background: #ffffff; border-radius: 15px; padding: 18px; margin-top: 20px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2); text-align: left;
+    max-width: 600px; margin-left: auto; margin-right: auto;
+  }
+  .warning { color: red; font-weight: bold; margin-top: 10px; }
+
+  /* --- Bố cục 2 cột cho sản phẩm --- */
+  .product-gallery {
+    display: flex; justify-content: space-between; gap: 20px; margin-top: 15px;
+  }
+  .product-column {
+    flex: 1;
+    background: #f9fafb;
+    border-radius: 12px;
+    padding: 10px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  }
+  .product-column h4 {
+    text-align: center;
+    color: #1a237e;
+    margin-bottom: 10px;
+  }
+  .product-item {
+    display: flex; align-items: center; gap: 10px;
+    background: white; margin-bottom: 8px;
+    padding: 6px 8px; border-radius: 8px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  }
+  .product-item img {
+    width: 60px; height: 60px; border-radius: 8px; object-fit: cover;
+  }
+  .product-item span { font-size: 14px; color: #333; }
+</style>
+</head>
+
+<body>
+<h2>👕 AI Gợi Ý Trang Phục Theo Độ Tuổi</h2>
+<p>Chọn 1 trong 2 cách để hệ thống gợi ý quần áo phù hợp:</p>
+
+<div class="section">
+  <h3>1️⃣ Nhận diện qua Camera</h3>
+  <button onclick="startCamera()">Bật Camera</button>
+  <video id="camera" autoplay playsinline></video>
+</div>
+
+<div class="section">
+  <h3>2️⃣ Tải ảnh khuôn mặt của bạn</h3>
+  <input type="file" id="imageUpload" accept="image/*">
+  <button onclick="predictFromImage()">Nhận diện từ ảnh</button>
+  <img id="previewImg" style="width:180px;margin-top:10px;border-radius:10px;display:none;">
+</div>
+
+<p class="warning" id="notice">
+⚠️ Chưa có mô hình AI. Vui lòng huấn luyện bằng Teachable Machine và dán link vào code.
+</p>
+
+<div id="resultBox">
+  <p><b>Độ tuổi dự đoán:</b> <span id="predictedAge">Chưa có</span></p>
+  <p><b>Phong cách hợp:</b> <span id="suggestStyle">---</span></p>
+
+  <div id="productGallery" class="product-gallery">
+    <div class="product-column" id="leftCol">
+      <h4>👕 Áo</h4>
+      <p>Chưa có dữ liệu</p>
+    </div>
+    <div class="product-column" id="rightCol">
+      <h4>👖 Quần & Giày</h4>
+      <p>Chưa có dữ liệu</p>
+    </div>
+  </div>
+</div>
+
+<!-- TensorFlow.js -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@2.0.0"></script>
+<!-- Teachable Machine -->
+<script src="https://unpkg.com/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
+
+<script>
+let model, cameraActive = false, predictInterval = null;
+
+const MODEL_URL = "https://teachablemachine.withgoogle.com/models/fCMt4JAgv/";
+const LABEL_TO_AGEGROUP = {
+  "age_5_12": "5-12",
+  "age_13_22": "13-22",
+  "age_23_45": "23-45",
+  "age_45_plus": "45+"
+};
+const PRODUCTS = {
+  "5-12": [
+    {type:"shirt", img:"https://kidstyle.com.vn/images/detailed/4/camcarot_30b3-in.jpg",name:"Áo thun trẻ em"},
+    {type:"shirt", img:"https://cdn.becungshop.vn/images/300x300/ao-khoac-trum-dau-spider-man-cho-be-trai-p24539a19a36d0-300x300.jpg",name:"Áo khoác trẻ em"},
+    {type:"shirt", img:"https://cdn.becungshop.vn/images/300x300/ao-khoac-lot-long-giu-nhiet-mua-dong-cho-p5f12b0d5-300x300.jpg",name:"Áo ấm trẻ em"},
+    {type:"shirt", img:"https://sanglaundry.com/wp-content/uploads/2022/11/23b70221aa5e6d00344f.jpg",name:"Áo len trẻ em"},
+    {type:"shirt", img:"https://bizweb.dktcdn.net/100/032/149/files/ao-len-cho-be-trai-1-5-tuoi-c1487-2.jpg?v=1573966425661",name:"Áo len trẻ em"},
+
+    {type:"pants", img:"https://cf.shopee.vn/file/1ecd9f68d4c9622ab44c52084794a0a5",name:"Quần short"},
+    {type:"pants", img:"https://bizweb.dktcdn.net/thumb/1024x1024/100/147/060/products/0212261dkp-020-3-215-2-jpeg.jpg?v=1740825214387",name:"Quần short"},
+    {type:"pants", img:"https://bizweb.dktcdn.net/thumb/1024x1024/100/147/060/products/5131025nkp-014-4-220-jpeg.jpg?v=1740825214617",name:"Quần short"},
+    {type:"pants", img:"https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSYP29Ox2CmY9droyasFakO-wwhgTA9SYKpUQ&s",name:"Quần short"},
+    {type:"pants", img:"https://product.hstatic.net/200000471735/product/quan-short-khaki-xam-g03_1__670ca8476cfa4056a662d00f4002a690_large.jpg",name:"Quần short"},
+
+
+    {type:"pants", img:"https://bizweb.dktcdn.net/100/172/234/products/giay-the-thao-tre-em-gte-12.jpg?v=1513829630810",name:"Giày thể thao"}
+  ],
+  "13-22": [
+    {type:"shirt", img:"https://dosi-in.com/images/detailed/445/dosiin-mvr-maverick-ao-khoac-hoodie-nam-nu-trong-dau-unisex-in-chu-ve-tay-typo-tu-hao-nguoi-viet445225.jpg",name:"Áo hoodie"},
+    {type:"shirt", img:"https://city89.com/wp-content/uploads/2023/03/sm-0010-mockup-black-front.jpg",name:"Áo thun"},
+    {type:"shirt", img:"https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQKGnH0bEzGCRqOCyTcg6_664RjAlmffoZLof_GsTu8DkgnRQWR6usNF-AHYmTg0BKI4k4&usqp=CAU",name:"Áo thun"},
+    {type:"shirt", img:"https://city89.com/wp-content/uploads/2023/03/sm-0011-mockup-white-front.jpg",name:"Áo thun"},
+    {type:"shirt", img:"https://down-vn.img.susercontent.com/file/vn-11134207-7r98o-ly60ti65gcp9ff",name:"Áo thun"},
+
+
+    {type:"pants", img:"https://cdn.boo.vn/media/catalog/product/1/_/1.2.21.2.23.001.124.01.60600034_1__4.webp",name:"Quần jeans"},
+    {type:"pants", img:"https://bizweb.dktcdn.net/thumb/1024x1024/100/413/756/products/image-1678786611394.png?v=1730995487317",name:"Sneaker"}
+  ],
+  "23-45": [
+    {type:"shirt", img:"https://product.hstatic.net/200000588671/product/ao-so-mi-nam-bycotton-trang-art-nhan_8ec622a241ea4deb93a02bdbdcb87954.jpg",name:"Áo sơ mi"},
+    {type:"pants", img:"https://polomanor.vn/cdn/shop/files/Polomanor_quanau_sidetab_capcao_xam_21122023_1.jpg?v=1756867748",name:"Quần tây"},
+    {type:"pants", img:"https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQmdKUZdgKw5cDqLxsgjVXrYwSyJl8T7Ovbcw&s",name:"Giày công sở"}
+  ],
+  "45+": [
+    {type:"shirt", img:"https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT3HhYxNghdQHXOb_o8Z_RbUkY_YM6swv-xfQ&s",name:"Áo polo"},
+    {type:"pants", img:"https://linhvnxk.com/wp-content/uploads/2018/09/quan-kaki-uniqlo-regular-fit-mau-be.jpg",name:"Quần kaki"},
+    {type:"pants", img:"https://kaiwings.vn/upload/product/kw-009/giay-doc-nam-da-bo-cao-cap-phoi-do-dep.jpg",name:"Giày da"}
+  ]
+};
+
+async function loadModel(){
+  if(model) return model;
+  document.getElementById("notice").innerText = "⏳ Đang tải mô hình AI...";
+  try{
+    model = await tmImage.load(MODEL_URL + "model.json", MODEL_URL + "metadata.json");
+    document.getElementById("notice").innerText = "✅ Mô hình đã sẵn sàng!";
+  }catch(e){
+    document.getElementById("notice").innerText = "❌ Lỗi tải mô hình, kiểm tra URL!";
+  }
+  return model;
+}
+
+async function startCamera(){
+  const video = document.getElementById("camera");
+  const stream = await navigator.mediaDevices.getUserMedia({video:true});
+  video.srcObject = stream;
+  cameraActive = true;
+  await loadModel();
+
+  if(predictInterval) clearInterval(predictInterval);
+
+  predictInterval = setInterval(async ()=>{
+    if(!cameraActive) return;
+    const prediction = await model.predict(video);
+    prediction.sort((a,b)=>b.probability - a.probability);
+    const label = prediction[0].className;
+    const ageGroup = LABEL_TO_AGEGROUP[label] || "Không xác định";
+    updateUI(ageGroup);
+  }, 1500);
+}
+
+async function predictFromImage(){
+  cameraActive = false;
+  if(predictInterval) clearInterval(predictInterval);
+
+  const input = document.getElementById("imageUpload");
+  const file = input.files[0];
+  if(!file) return alert("Vui lòng chọn ảnh!");
+  const img = document.getElementById("previewImg");
+  img.src = URL.createObjectURL(file);
+  img.style.display = "block";
+  
+  await loadModel();
+  const prediction = await model.predict(img);
+  prediction.sort((a,b)=>b.probability - a.probability);
+  const label = prediction[0].className;
+  const ageGroup = LABEL_TO_AGEGROUP[label] || "Không xác định";
+  updateUI(ageGroup);
+}
+
+function updateUI(ageGroup){
+  document.getElementById("predictedAge").innerText = ageGroup;
+  let style="", items=PRODUCTS[ageGroup]||[];
+  switch(ageGroup){
+    case "5-12": style="Dễ thương, năng động"; break;
+    case "13-22": style="Hiện đại, cá tính"; break;
+    case "23-45": style="Thanh lịch, chuyên nghiệp"; break;
+    case "45+": style="Trưởng thành, giản dị"; break;
+    default: style="---";
+  }
+  document.getElementById("suggestStyle").innerText = style;
+
+  const leftCol = document.getElementById("leftCol");
+  const rightCol = document.getElementById("rightCol");
+
+  const shirts = items.filter(p => p.type === "shirt");
+  const pants = items.filter(p => p.type === "pants");
+
+  leftCol.innerHTML = `<h4>👕 Áo</h4>` + 
+    (shirts.length ? shirts.map(p=>`<div class="product-item"><img src="${p.img}"><span>${p.name}</span></div>`).join("") : "<p>Không có</p>");
+
+  rightCol.innerHTML = `<h4>👖 Quần & Giày</h4>` + 
+    (pants.length ? pants.map(p=>`<div class="product-item"><img src="${p.img}"><span>${p.name}</span></div>`).join("") : "<p>Không có</p>");
+}
+</script>
+</body>
+</html>
